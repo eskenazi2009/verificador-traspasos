@@ -10,12 +10,14 @@ Todo se procesa en el navegador; los archivos no se suben a ningún servidor.
    `Cód. Barras | Referencia | Talla | Color | Descripción | Cód. Almacén Origen | Cód. Almacén Destino | UDS. Env`
    - Si alguna línea tiene un origen distinto a **C99** o un destino distinto a **A2, A3, A4, A7**, la página marca error con el número de fila y no deja verificar.
    - Debajo del archivo se ven las unidades y referencias que van a cada tienda.
-2. Carga el Excel **físico** de cada tienda en su casilla. No hace falta tener las 4: las que falten salen como *Sin archivo de tienda*.
-   - Acepta **una fila por talla** o **tallas en columnas** (`Referencia | 7 | 7.5 | 8 ...`).
+2. Carga en la casilla de cada tienda su archivo de recibo (el **MAPPING RECIBO DE TRASPASOS**). Siempre tiene la hoja `mapping` con encabezados en la fila 1:
+   `COD BARRA | Referencia | Talla | Cantidad | Color | DESCRIPCION` — una fila por cada par escaneado (Referencia, Talla, etc. salen de la hoja DATA).
+   - Si alguna fila sale **NO COINCIDE** (el código escaneado no está en DATA), la página marca error con el número de fila y no deja verificar.
+   - No hace falta tener las 4 tiendas: las que falten salen como *Sin archivo de tienda*.
+   - El cruce es por **Referencia + Talla** (los códigos de barras de la tienda son del fabricante y los del sistema son internos, no coinciden).
+   - Tallas unisex: si la tienda trae un solo número (ej. `5`) y el sistema tiene esa referencia con talla doble (ej. `H5|M6.5`), el número se toma como la talla de **hombre**.
 3. Clic en **Verificar traspasos**. Hay una pestaña de **Resumen** con todas las tiendas y una pestaña por tienda con el detalle.
 4. **Descargar reporte Excel**: hoja *Resumen* + por cada tienda una hoja por referencia (Referencia, Color) y una hoja por talla (Referencia, Color, Talla). También se puede imprimir / guardar como PDF la pestaña abierta.
-
-El botón **Descargar plantilla para tiendas** da un Excel con las columnas `Referencia | Talla | Cantidad` para que las tiendas lo llenen siempre igual.
 
 ### Estados por talla
 
