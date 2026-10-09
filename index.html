@@ -49,9 +49,7 @@
   details.cfg > summary { cursor: pointer; color: var(--accent); font-size: 13px; margin-bottom: 10px; }
   .row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 10px; }
   .row3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; margin-bottom: 10px; }
-  .row4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 10px; }
-  @media (max-width: 720px) { .row4 { grid-template-columns: 1fr 1fr; } }
-  @media (max-width: 520px) { .row, .row3, .row4 { grid-template-columns: 1fr; } }
+  @media (max-width: 520px) { .row, .row3 { grid-template-columns: 1fr; } }
   .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
   .seg button { border: 0; background: transparent; padding: 6px 10px; cursor: pointer; color: var(--text); font: inherit; }
   .seg button.on { background: var(--accent); color: #fff; }
@@ -62,6 +60,7 @@
   .preview table { font-size: 12px; }
   .hint { font-size: 12px; color: var(--muted); margin: 4px 0 0; }
   .err { color: var(--bad); font-size: 13px; margin-top: 6px; }
+  .err ul { margin: 4px 0 0; padding-left: 18px; }
   .linkbtn { background: none; border: 0; color: var(--accent); cursor: pointer; font: inherit; font-size: 12px; padding: 0; }
   .btn { border: 1px solid var(--accent); background: var(--accent); color: #fff; padding: 9px 16px; border-radius: 7px; cursor: pointer; font: inherit; font-weight: 600; }
   .btn.ghost { background: transparent; color: var(--accent); }
@@ -78,6 +77,10 @@
   .kpi .v { font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; }
   .kpi .l { font-size: 12px; color: var(--muted); }
   .kpi.ok .v { color: var(--ok); } .kpi.bad .v { color: var(--bad); }
+  .storeunits { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-top: 10px; }
+  @media (max-width: 520px) { .storeunits { grid-template-columns: 1fr 1fr; } }
+  .storeunits div { border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; font-size: 12px; color: var(--muted); }
+  .storeunits b { display: block; font-size: 16px; color: var(--text); font-variant-numeric: tabular-nums; }
   .tag { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 12px; font-weight: 600; }
   .t-ok { background: var(--ok-soft); color: var(--ok); }
   .t-bad, .t-falt, .t-norec { background: var(--bad-soft); color: var(--bad); }
@@ -150,11 +153,12 @@
 <script>
 'use strict';
 
+const ORIGIN = 'C99';
 const STORES = [
-  { code: 'A2', name: 'Multiplaza', keys: ['multiplaza', 'multi plaza'] },
-  { code: 'A3', name: 'Albrook', keys: ['albrook'] },
-  { code: 'A4', name: 'Dorado', keys: ['dorado'] },
-  { code: 'A7', name: 'Metromall', keys: ['metromall', 'metro mall', 'metro'] },
+  { code: 'A2', name: 'Multiplaza' },
+  { code: 'A3', name: 'Albrook' },
+  { code: 'A4', name: 'Dorado' },
+  { code: 'A7', name: 'Metromall' },
 ];
 const storeLabel = s => `${s.code} ${s.name}`;
 
@@ -178,30 +182,150 @@ function toNum(v) {
   const n = parseFloat(s.replace(/[^\d.,-]/g, '').replace(/,(?=\d{3}\b)/g, '').replace(',', '.'));
   return isNaN(n) ? 0 : n;
 }
+// Sorts sizes by their first number, so "H4|M5.5" < "H4.5|M6" < "H10|M11.5"
 function sizeSort(a, b) {
   const order = ['XXS', 'XS', 'S', 'M', 'L', 'XL', 'XXL', '2XL', 'XXXL', '3XL'];
-  const na = parseFloat(a), nb = parseFloat(b);
+  const num = s => { const m = String(s).match(/\d+(\.\d+)?/); return m ? parseFloat(m[0]) : NaN; };
+  const na = num(a), nb = num(b);
   const ia = order.indexOf(a), ib = order.indexOf(b);
-  if (!isNaN(na) && !isNaN(nb)) return na - nb;
+  if (!isNaN(na) && !isNaN(nb) && na !== nb) return na - nb;
   if (ia >= 0 && ib >= 0) return ia - ib;
-  if (!isNaN(na)) return -1;
-  if (!isNaN(nb)) return 1;
+  if (!isNaN(na) && isNaN(nb)) return -1;
+  if (isNaN(na) && !isNaN(nb)) return 1;
   return a.localeCompare(b);
 }
 const SIZE_HDR = /^(xxs|xs|s|m|l|xl|xxl|xxxl|2xl|3xl|os|u|unica|\d{1,2}([.,]5)?|\d{1,2}\/\d{1,2})$/i;
+function readSheet(wb, name) {
+  const ws = wb.Sheets[name];
+  const rng = XLSX.utils.decode_range(ws['!ref'] || 'A1');
+  rng.s.r = 0; rng.s.c = 0; // keep row/column numbers aligned with Excel
+  return XLSX.utils.sheet_to_json(ws, { header: 1, defval: '', raw: true, blankrows: true, range: rng });
+}
+function wireDrop(el, onFile) {
+  const input = el.querySelector('input[type=file]'), drop = el.querySelector('[data-drop]');
+  input.addEventListener('change', () => input.files[0] && onFile(input.files[0]));
+  ['dragenter', 'dragover'].forEach(e => drop.addEventListener(e, ev => { ev.preventDefault(); drop.classList.add('over'); }));
+  ['dragleave', 'drop'].forEach(e => drop.addEventListener(e, ev => { ev.preventDefault(); drop.classList.remove('over'); }));
+  drop.addEventListener('drop', ev => ev.dataTransfer.files[0] && onFile(ev.dataTransfer.files[0]));
+  return { input, drop };
+}
 
-// column guessing by header text
+// ---------- system file (fixed format exported by the office system) ----------
+// Columns: A Cód. Barras · B Referencia · C Talla · D Color · E Descripción · F Cód. Almacén Origen · G Cód. Almacén Destino · H UDS. Env
+const SIS_COLS = [
+  { key: 'barcode', re: /barra/, label: 'Cód. Barras' },
+  { key: 'ref', re: /referencia/, label: 'Referencia' },
+  { key: 'talla', re: /talla/, label: 'Talla' },
+  { key: 'color', re: /color/, label: 'Color' },
+  { key: 'desc', re: /descrip/, label: 'Descripción' },
+  { key: 'origen', re: /origen/, label: 'Cód. Almacén Origen' },
+  { key: 'destino', re: /destino/, label: 'Cód. Almacén Destino' },
+  { key: 'cant', re: /uds|env/, label: 'UDS. Env' },
+];
+
+function makeSystem(el) {
+  const st = { fileName: '', lines: [], errors: [], loaded: false };
+  el.innerHTML = `
+    <h2>1. Traspasos en sistema (C99 Oficina → tiendas)</h2>
+    <label class="drop" data-drop>
+      <input type="file" accept=".xls,.xlsx">
+      <div><strong>Arrastra el Excel de traspasos aquí</strong> o haz clic para elegirlo</div>
+      <div class="hint">Formato del sistema: Cód. Barras · Referencia · Talla · Color · Descripción · Almacén Origen · Almacén Destino · UDS. Env</div>
+      <div class="fname" data-fname></div>
+      <div class="hint" data-sum></div>
+    </label>
+    <div class="actions" style="margin-top:6px"><button class="linkbtn" data-clear style="display:none">Quitar archivo</button></div>
+    <div class="storeunits" data-units style="display:none"></div>
+    <div class="err" data-err></div>`;
+  const q = s => el.querySelector(s);
+  const { input, drop } = wireDrop(el, load);
+
+  q('[data-clear]').addEventListener('click', () => {
+    Object.assign(st, { fileName: '', lines: [], errors: [], loaded: false });
+    input.value = '';
+    render();
+  });
+
+  async function load(file) {
+    Object.assign(st, { fileName: file.name, lines: [], errors: [], loaded: true });
+    try {
+      const wb = XLSX.read(await file.arrayBuffer(), { type: 'array' });
+      parse(readSheet(wb, wb.SheetNames[0]));
+    } catch (e) {
+      st.errors = ['No se pudo leer el archivo: ' + e.message];
+    }
+    render();
+  }
+
+  function parse(aoa) {
+    const hdr = aoa[0] || [];
+    const wrong = SIS_COLS.filter((c, i) => !c.re.test(norm(hdr[i])));
+    if (wrong.length) {
+      st.errors = ['El archivo no tiene el formato de traspaso del sistema. Revisa estas columnas: ' +
+        wrong.map(c => `${XLSX.utils.encode_col(SIS_COLS.indexOf(c))} debería ser "${c.label}"`).join(', ') + '.'];
+      return;
+    }
+    const codes = STORES.map(s => s.code);
+    const errs = [];
+    aoa.slice(1).forEach((r, i) => {
+      const row = i + 2;
+      if (r.every(v => String(v ?? '').trim() === '')) return;
+      const L = {};
+      SIS_COLS.forEach((c, j) => L[c.key] = String(r[j] ?? '').trim());
+      L.ref = normRef(L.ref); L.talla = normTalla(L.talla); L.origen = L.origen.toUpperCase(); L.destino = L.destino.toUpperCase();
+      L.cant = toNum(r[7]);
+      const bad = [];
+      if (L.origen !== ORIGIN) bad.push(`origen "${L.origen || 'vacío'}" (debe ser ${ORIGIN})`);
+      if (!codes.includes(L.destino)) bad.push(`destino "${L.destino || 'vacío'}" (debe ser ${codes.join(', ')})`);
+      if (!L.ref) bad.push('sin referencia');
+      if (!L.cant) bad.push('sin cantidad');
+      if (bad.length) errs.push(`Fila ${row}: ${bad.join(', ')}`);
+      else st.lines.push({ ...L, tienda: L.destino });
+    });
+    if (errs.length) {
+      st.errors = [`Hay ${errs.length} línea(s) con problemas. Corrige el archivo y vuelve a cargarlo:`, ...errs];
+      st.lines = [];
+    }
+  }
+
+  function render() {
+    const ok = st.loaded && !st.errors.length;
+    q('[data-fname]').textContent = st.fileName;
+    q('[data-clear]').style.display = st.loaded ? '' : 'none';
+    drop.classList.toggle('loaded', ok);
+    drop.classList.toggle('failed', st.loaded && !ok);
+    const units = st.lines.reduce((a, l) => a + l.cant, 0);
+    q('[data-sum]').textContent = ok ? `${st.lines.length.toLocaleString()} líneas · ${units.toLocaleString()} unidades · ${new Set(st.lines.map(l => l.ref)).size} referencias` : '';
+    const uEl = q('[data-units]');
+    uEl.style.display = ok ? '' : 'none';
+    uEl.innerHTML = STORES.map(s => {
+      const ls = st.lines.filter(l => l.tienda === s.code);
+      return `<div>${esc(storeLabel(s))}<b>${ls.reduce((a, l) => a + l.cant, 0).toLocaleString()} unid.</b>${new Set(ls.map(l => l.ref)).size} referencias</div>`;
+    }).join('');
+    const [head, ...rest] = st.errors;
+    q('[data-err]').innerHTML = !head ? '' : esc(head) + (rest.length ?
+      `<ul>${rest.slice(0, 30).map(e => `<li>${esc(e)}</li>`).join('')}${rest.length > 30 ? `<li>… y ${rest.length - 30} más</li>` : ''}</ul>` : '');
+    updateRun();
+  }
+
+  return {
+    st,
+    loaded: () => st.loaded,
+    extract: () => !st.loaded ? { error: 'Falta cargar el archivo', lines: [] } :
+      st.errors.length ? { error: 'El archivo tiene errores', lines: [] } : { lines: st.lines },
+  };
+}
+
+// ---------- store files (format still to be defined; columns are auto-detected and adjustable) ----------
 const GUESS = {
   ref: [/^ref/, /referencia/, /^articulo/, /^modelo/, /^sku$/, /^style/, /^codigo$/, /cod.*art/],
   talla: [/talla/, /^size/, /^tal$/, /^medida/],
-  cant: [/^cant/, /cantidad/, /unidades/, /^unid/, /^qty/, /piezas/, /pares/, /recibid/, /enviad/, /^total$/],
-  desc: [/descrip/, /^nombre/, /^producto$/],
-  tienda: [/destino/, /tienda/, /almacen/, /^alm/, /sucursal/, /bodega/],
+  cant: [/^cant/, /cantidad/, /unidades/, /^unid/, /^qty/, /piezas/, /pares/, /recibid/, /enviad/, /^uds/, /^total$/],
+  color: [/^color/],
 };
 function guessCol(headers, key, exclude = []) {
   for (const re of GUESS[key]) {
-    const i = headers.findIndex((h, idx) => !exclude.includes(idx) && re.test(norm(h)) &&
-      !/barra|ean|upc/.test(norm(h)) && !(key === 'tienda' && /origen/.test(norm(h))));
+    const i = headers.findIndex((h, idx) => !exclude.includes(idx) && re.test(norm(h)) && !/barra|ean|upc/.test(norm(h)));
     if (i >= 0) return i;
   }
   return -1;
@@ -211,36 +335,28 @@ function detectHeaderRow(aoa) {
   for (let r = 0; r < Math.min(25, aoa.length); r++) {
     const hs = aoa[r] || [];
     let score = 0;
-    for (const k of ['ref', 'talla', 'cant', 'desc']) if (guessCol(hs, k) >= 0) score += 2;
+    for (const k of ['ref', 'talla', 'cant']) if (guessCol(hs, k) >= 0) score += 2;
     score += hs.filter(h => SIZE_HDR.test(String(h).trim())).length >= 3 ? 2 : 0;
     if (score > bestScore) { bestScore = score; best = r; }
   }
   return best;
 }
-// Picks which value of the store column belongs to a store (by code "A2" or by name)
-function guessStoreValue(store, values) {
-  const codeRe = new RegExp(`(^|[^a-z0-9])${store.code.toLowerCase()}([^a-z0-9]|$)`);
-  return values.find(v => codeRe.test(norm(v))) ||
-    values.find(v => store.keys.some(k => norm(v).includes(k))) || '';
-}
 
-// ---------- file loader + column mapper (used for system file and each store file) ----------
-function makeSide({ el, title, subtitle, withStores = false, collapsible = false }) {
+function makeStore(el, store) {
   const st = { wb: null, fileName: '', sheet: '', aoa: [], hdr: 0, format: 'rows',
-    map: { ref: -1, talla: -1, cant: -1, desc: -1, filt: -1, tienda: -1 }, sizeCols: new Set(), filtVals: null,
-    storeMap: {} };
+    map: { ref: -1, talla: -1, cant: -1, color: -1 }, sizeCols: new Set() };
   el.innerHTML = `
-    <h${collapsible ? 3 : 2}>${title}</h${collapsible ? 3 : 2}>
+    <h3>${esc(storeLabel(store))}</h3>
     <label class="drop" data-drop>
       <input type="file" accept=".xlsx,.xls,.xlsm,.csv">
       <div><strong>Arrastra el Excel aquí</strong> o haz clic para elegirlo</div>
-      <div class="hint">${subtitle}</div>
+      <div class="hint">Excel que manda ${esc(store.name)} con lo que contó</div>
       <div class="fname" data-fname></div>
       <div class="hint" data-sum></div>
     </label>
     <div class="actions" style="margin-top:6px"><button class="linkbtn" data-clear style="display:none">Quitar archivo</button></div>
     <div class="err" data-err></div>
-    ${collapsible ? '<details class="cfg" data-cfg><summary>Ajustar columnas</summary>' : '<div class="cfg" data-cfg>'}
+    <details class="cfg" data-cfg><summary>Ajustar columnas</summary>
       <div class="row">
         <div><label class="f">Hoja</label><select data-sheet></select></div>
         <div><label class="f">Fila de encabezados</label><input type="number" min="1" data-hdr></div>
@@ -261,31 +377,14 @@ function makeSide({ el, title, subtitle, withStores = false, collapsible = false
         <label class="f">Columnas de talla (marca las que son tallas)</label>
         <div class="chips" data-sizes></div>
       </div>
-      ${withStores ? `
-      <div style="margin-bottom:10px">
-        <label class="f">Columna de tienda destino *</label><select data-m="tienda"></select>
-      </div>
-      <div data-storebox style="display:none">
-        <label class="f">¿Qué valor de esa columna corresponde a cada tienda?</label>
-        <div class="row4" data-stores></div>
-      </div>` : ''}
       <div class="row">
-        <div><label class="f">Descripción (opcional)</label><select data-m="desc"></select></div>
-        <div><label class="f">Filtrar por otra columna (opcional)</label><select data-m="filt"></select></div>
-      </div>
-      <div data-filtbox style="display:none;margin-bottom:10px">
-        <label class="f">Incluir solo estos valores <a href="#" data-fall>todos</a> · <a href="#" data-fnone>ninguno</a></label>
-        <div class="chips" data-fvals></div>
+        <div><label class="f">Color (opcional)</label><select data-m="color"></select></div>
       </div>
       <div class="preview" data-prev></div>
-    ${collapsible ? '</details>' : '</div>'}`;
+    </details>`;
   const q = s => el.querySelector(s);
-  const input = q('input[type=file]'), drop = q('[data-drop]');
+  const { input, drop } = wireDrop(el, load);
 
-  input.addEventListener('change', () => input.files[0] && load(input.files[0]));
-  ['dragenter', 'dragover'].forEach(e => drop.addEventListener(e, ev => { ev.preventDefault(); drop.classList.add('over'); }));
-  ['dragleave', 'drop'].forEach(e => drop.addEventListener(e, ev => { ev.preventDefault(); drop.classList.remove('over'); }));
-  drop.addEventListener('drop', ev => ev.dataTransfer.files[0] && load(ev.dataTransfer.files[0]));
   q('[data-clear]').addEventListener('click', () => {
     st.wb = null; st.fileName = ''; st.aoa = []; input.value = '';
     q('[data-fname]').textContent = ''; q('[data-sum]').textContent = ''; q('[data-err]').textContent = '';
@@ -298,16 +397,14 @@ function makeSide({ el, title, subtitle, withStores = false, collapsible = false
   async function load(file) {
     q('[data-err]').textContent = '';
     try {
-      const buf = await file.arrayBuffer();
-      st.wb = XLSX.read(buf, { type: 'array' });
+      st.wb = XLSX.read(await file.arrayBuffer(), { type: 'array' });
       st.fileName = file.name;
       q('[data-fname]').textContent = file.name;
       q('[data-clear]').style.display = '';
-      const sel = q('[data-sheet]');
-      sel.innerHTML = st.wb.SheetNames.map(n => `<option>${esc(n)}</option>`).join('');
+      q('[data-sheet]').innerHTML = st.wb.SheetNames.map(n => `<option>${esc(n)}</option>`).join('');
       selectSheet(st.wb.SheetNames[0]);
       q('[data-cfg]').classList.add('show');
-      if (collapsible) q('[data-cfg]').open = !!extract().error;
+      q('[data-cfg]').open = !!extract().error;
     } catch (e) {
       q('[data-err]').textContent = 'No se pudo leer el archivo: ' + e.message;
       drop.classList.add('failed');
@@ -316,10 +413,7 @@ function makeSide({ el, title, subtitle, withStores = false, collapsible = false
 
   function selectSheet(name) {
     st.sheet = name;
-    const ws = st.wb.Sheets[name];
-    const rng = XLSX.utils.decode_range(ws['!ref'] || 'A1');
-    rng.s.r = 0; rng.s.c = 0; // keep row/column numbers aligned with Excel
-    st.aoa = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '', raw: true, blankrows: true, range: rng });
+    st.aoa = readSheet(st.wb, name);
     st.hdr = detectHeaderRow(st.aoa);
     q('[data-hdr]').value = st.hdr + 1;
     autoMap();
@@ -330,69 +424,31 @@ function makeSide({ el, title, subtitle, withStores = false, collapsible = false
     const width = Math.max(h.length, ...st.aoa.slice(st.hdr, st.hdr + 50).map(r => r.length));
     return Array.from({ length: width }, (_, i) => String(h[i] ?? '').trim() || `(Columna ${XLSX.utils.encode_col(i)})`);
   }
-  const colValues = i => [...new Set(st.aoa.slice(st.hdr + 1).map(r => String(r[i] ?? '').trim()))].sort();
 
   function autoMap() {
     const hs = headers();
-    st.map.tienda = withStores ? guessCol(hs, 'tienda') : -1;
-    const ex = [st.map.tienda];
-    st.map.ref = guessCol(hs, 'ref', ex);
-    st.map.talla = guessCol(hs, 'talla', [...ex, st.map.ref]);
-    st.map.cant = guessCol(hs, 'cant', [...ex, st.map.ref, st.map.talla]);
-    st.map.desc = guessCol(hs, 'desc', [...ex, st.map.ref]);
-    st.map.filt = -1; st.filtVals = null;
+    st.map.ref = guessCol(hs, 'ref');
+    st.map.talla = guessCol(hs, 'talla', [st.map.ref]);
+    st.map.cant = guessCol(hs, 'cant', [st.map.ref, st.map.talla]);
+    st.map.color = guessCol(hs, 'color', [st.map.ref, st.map.talla, st.map.cant]);
     const sizeIdx = hs.map((h, i) => SIZE_HDR.test(h) ? i : -1).filter(i => i >= 0 && i !== st.map.ref);
     st.sizeCols = new Set(sizeIdx);
     st.format = (st.map.talla < 0 && sizeIdx.length >= 3) ? 'matrix' : 'rows';
-    autoStores();
     render();
-  }
-  function autoStores() {
-    st.storeMap = {};
-    if (!withStores || st.map.tienda < 0) return;
-    const vals = colValues(st.map.tienda);
-    STORES.forEach(s => st.storeMap[s.code] = guessStoreValue(s, vals));
   }
 
   function render() {
     const hs = headers();
     const opts = (sel, optional) => (optional ? '<option value="-1">— ninguna —</option>' : '<option value="-1">— elegir —</option>') +
       hs.map((h, i) => `<option value="${i}" ${i === sel ? 'selected' : ''}>${esc(h)}</option>`).join('');
-    el.querySelectorAll('[data-m]').forEach(s => {
-      const k = s.dataset.m;
-      s.innerHTML = opts(st.map[k], k === 'desc' || k === 'filt');
-    });
+    el.querySelectorAll('[data-m]').forEach(s => s.innerHTML = opts(st.map[s.dataset.m], s.dataset.m === 'color'));
     q('[data-sheet]').value = st.sheet;
     el.querySelectorAll('[data-fmt] button').forEach(b => b.classList.toggle('on', b.dataset.v === st.format));
     el.querySelectorAll('[data-rowonly]').forEach(e => e.style.display = st.format === 'rows' ? '' : 'none');
     q('[data-matrixonly]').style.display = st.format === 'matrix' ? '' : 'none';
-    q('[data-sizes]').innerHTML = hs.map((h, i) => i === st.map.ref || i === st.map.desc || i === st.map.tienda ? '' :
+    q('[data-sizes]').innerHTML = hs.map((h, i) => i === st.map.ref || i === st.map.color ? '' :
       `<label class="chip"><input type="checkbox" value="${i}" ${st.sizeCols.has(i) ? 'checked' : ''}>${esc(h)}</label>`).join('');
-    if (withStores) renderStores();
-    renderFilter();
     renderPreview();
-    updateRun();
-  }
-
-  function renderStores() {
-    const box = q('[data-storebox]');
-    if (st.map.tienda < 0) { box.style.display = 'none'; return; }
-    box.style.display = '';
-    const vals = colValues(st.map.tienda);
-    q('[data-stores]').innerHTML = STORES.map(s => `<div><label class="f">${esc(storeLabel(s))}</label>
-      <select data-store="${s.code}"><option value="">— ninguno —</option>${vals.map(v =>
-        `<option value="${esc(v)}" ${v === st.storeMap[s.code] ? 'selected' : ''}>${esc(v || '(vacío)')}</option>`).join('')}</select></div>`).join('');
-  }
-
-  function renderFilter() {
-    const box = q('[data-filtbox]');
-    if (st.map.filt < 0) { box.style.display = 'none'; st.filtVals = null; return; }
-    const vals = colValues(st.map.filt);
-    if (!st.filtVals) st.filtVals = new Set(vals);
-    box.style.display = '';
-    q('[data-fvals]').innerHTML = vals.slice(0, 300).map(v =>
-      `<label class="chip"><input type="checkbox" value="${esc(v)}" ${st.filtVals.has(v) ? 'checked' : ''}>${esc(v || '(vacío)')}</label>`).join('') +
-      (vals.length > 300 ? `<span class="hint">… ${vals.length - 300} valores más</span>` : '');
   }
 
   function renderPreview() {
@@ -403,45 +459,22 @@ function makeSide({ el, title, subtitle, withStores = false, collapsible = false
     const res = extract();
     drop.classList.toggle('loaded', !res.error);
     drop.classList.toggle('failed', !!res.error);
-    let sum = res.error ? '⚠ ' + res.error :
+    q('[data-sum]').textContent = res.error ? '⚠ ' + res.error :
       `${res.lines.length.toLocaleString()} líneas · ${res.units.toLocaleString()} unidades · ${res.refs} referencias`;
-    if (!res.error && withStores) {
-      sum += ' · ' + STORES.map(s => `${s.code}: ${res.lines.filter(l => l.tienda === s.code).reduce((a, l) => a + l.cant, 0).toLocaleString()}`).join(' · ');
-    }
-    q('[data-sum]').textContent = sum;
+    updateRun();
   }
 
-  // Events
   q('[data-sheet]').addEventListener('change', e => selectSheet(e.target.value));
-  q('[data-hdr]').addEventListener('change', e => {
-    st.hdr = Math.max(0, (parseInt(e.target.value) || 1) - 1); autoMap();
-  });
-  q('[data-fmt]').addEventListener('click', e => {
-    const b = e.target.closest('button'); if (!b) return;
-    st.format = b.dataset.v; render();
-  });
-  el.querySelectorAll('[data-m]').forEach(s => s.addEventListener('change', () => {
-    st.map[s.dataset.m] = parseInt(s.value);
-    if (s.dataset.m === 'filt') st.filtVals = null;
-    if (s.dataset.m === 'tienda') autoStores();
-    render();
-  }));
-  if (withStores) q('[data-stores]').addEventListener('change', e => {
-    st.storeMap[e.target.dataset.store] = e.target.value; renderPreview(); updateRun();
-  });
+  q('[data-hdr]').addEventListener('change', e => { st.hdr = Math.max(0, (parseInt(e.target.value) || 1) - 1); autoMap(); });
+  q('[data-fmt]').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; st.format = b.dataset.v; render(); });
+  el.querySelectorAll('[data-m]').forEach(s => s.addEventListener('change', () => { st.map[s.dataset.m] = parseInt(s.value); render(); }));
   q('[data-sizes]').addEventListener('change', e => {
     const i = parseInt(e.target.value);
     e.target.checked ? st.sizeCols.add(i) : st.sizeCols.delete(i);
-    renderPreview(); updateRun();
+    renderPreview();
   });
-  q('[data-fvals]').addEventListener('change', e => {
-    e.target.checked ? st.filtVals.add(e.target.value) : st.filtVals.delete(e.target.value);
-    renderPreview(); updateRun();
-  });
-  q('[data-fall]').addEventListener('click', e => { e.preventDefault(); st.filtVals = null; renderFilter(); renderPreview(); updateRun(); });
-  q('[data-fnone]').addEventListener('click', e => { e.preventDefault(); st.filtVals = new Set(); renderFilter(); renderPreview(); updateRun(); });
 
-  // Turns the sheet into [{ref, talla, cant, desc, tienda}]; tienda is the store code (system file only)
+  // Turns the sheet into [{ref, talla, cant, color}]
   function extract() {
     const fail = error => ({ error, lines: [], units: 0, refs: 0 });
     if (!st.wb) return fail('Falta cargar el archivo');
@@ -449,30 +482,19 @@ function makeSide({ el, title, subtitle, withStores = false, collapsible = false
     if (m.ref < 0) return fail('Elige la columna de Referencia');
     if (st.format === 'rows' && (m.talla < 0 || m.cant < 0)) return fail('Elige las columnas de Talla y Cantidad');
     if (st.format === 'matrix' && !st.sizeCols.size) return fail('Marca las columnas de talla');
-    if (withStores && m.tienda < 0) return fail('Elige la columna de tienda destino');
-    if (withStores && !STORES.some(s => st.storeMap[s.code])) return fail('Asigna el valor de cada tienda');
-    const valToStore = new Map();
-    if (withStores) STORES.forEach(s => st.storeMap[s.code] && valToStore.set(st.storeMap[s.code], s.code));
     const hs = headers();
     const lines = [];
     for (const r of st.aoa.slice(st.hdr + 1)) {
       const ref = normRef(r[m.ref]);
       if (!ref || /^TOTAL/.test(ref)) continue;
-      if (m.filt >= 0 && st.filtVals && !st.filtVals.has(String(r[m.filt] ?? '').trim())) continue;
-      let tienda = '';
-      if (withStores) {
-        tienda = valToStore.get(String(r[m.tienda] ?? '').trim());
-        if (!tienda) continue;
-      }
-      const desc = m.desc >= 0 ? String(r[m.desc] ?? '').trim() : '';
+      const color = m.color >= 0 ? String(r[m.color] ?? '').trim() : '';
       if (st.format === 'rows') {
         const cant = toNum(r[m.cant]);
-        if (!cant) continue;
-        lines.push({ ref, talla: normTalla(r[m.talla]), cant, desc, tienda });
+        if (cant) lines.push({ ref, talla: normTalla(r[m.talla]), cant, color });
       } else {
         for (const i of st.sizeCols) {
           const cant = toNum(r[i]);
-          if (cant) lines.push({ ref, talla: normTalla(hs[i]), cant, desc, tienda });
+          if (cant) lines.push({ ref, talla: normTalla(hs[i]), cant, color });
         }
       }
     }
@@ -482,14 +504,13 @@ function makeSide({ el, title, subtitle, withStores = false, collapsible = false
   return { st, extract, loaded: () => !!st.wb };
 }
 
-const SIS = makeSide({ el: $('#cardSis'), title: '1. Traspasos en sistema (C99 Oficina → tiendas)',
-  subtitle: 'Excel descargado del sistema con los traspasos a las 4 tiendas', withStores: true, collapsible: true });
+const SIS = makeSystem($('#cardSis'));
 const FIS = {};
 for (const s of STORES) {
   const el = document.createElement('div');
   el.className = 'card';
   $('#storeCards').appendChild(el);
-  FIS[s.code] = makeSide({ el, title: storeLabel(s), subtitle: `Excel que manda ${s.name} con lo que contó`, collapsible: true });
+  FIS[s.code] = makeStore(el, s);
 }
 
 function updateRun() {
@@ -518,13 +539,13 @@ const STATUS = {
 function compareStore(sis, fis) {
   const refs = new Map();
   const add = (l, side) => {
-    if (!refs.has(l.ref)) refs.set(l.ref, { ref: l.ref, desc: '', sizes: new Map() });
+    if (!refs.has(l.ref)) refs.set(l.ref, { ref: l.ref, color: '', sizes: new Map() });
     const R = refs.get(l.ref);
-    if (!R.desc && l.desc) R.desc = l.desc;
+    if (!R.color && l.color) R.color = l.color;
     if (!R.sizes.has(l.talla)) R.sizes.set(l.talla, { talla: l.talla, sis: 0, fis: 0 });
     R.sizes.get(l.talla)[side] += l.cant;
   };
-  sis.forEach(l => add(l, 'sis'));
+  sis.forEach(l => add(l, 'sis')); // system first, so its color wins
   fis.forEach(l => add(l, 'fis'));
 
   const out = [];
@@ -542,7 +563,7 @@ function compareStore(sis, fis) {
       else if (fisT === 0) why = 'Referencia no se recibió';
       else why = bad.map(s => `Talla ${s.talla}: ${s.dif > 0 ? '+' : ''}${s.dif}`).join(', ');
     }
-    out.push({ ref: R.ref, desc: R.desc, sizes, sis: sisT, fis: fisT, dif: fisT - sisT, ok: !bad.length, why });
+    out.push({ ref: R.ref, color: R.color, sizes, sis: sisT, fis: fisT, dif: fisT - sisT, ok: !bad.length, why });
   }
   out.sort((a, b) => (a.ok - b.ok) || a.ref.localeCompare(b.ref));
   const all = out.flatMap(r => r.sizes);
@@ -644,7 +665,7 @@ function renderStore(s) {
       <div class="seg" id="segFilter">
         <button data-f="all">Todas</button><button data-f="bad">Con diferencias</button><button data-f="ok">OK</button>
       </div>
-      <input type="text" id="search" placeholder="Buscar referencia o descripción">
+      <input type="text" id="search" placeholder="Buscar referencia o color">
       <button class="btn ghost" id="btnExpand" style="padding:6px 10px">Expandir todo</button>
     </div>
     <div class="tablewrap"><table id="tbl"></table></div>
@@ -672,12 +693,12 @@ function renderTable(s) {
   const q = norm($('#search').value);
   const rows = s.refs.filter(r =>
     (filter === 'all' || (filter === 'ok') === r.ok) &&
-    (!q || norm(r.ref).includes(q) || norm(r.desc).includes(q)));
-  let html = `<thead><tr><th>Referencia</th><th>Descripción</th><th class="n">Sistema</th><th class="n">Físico</th><th class="n">Diferencia</th><th>Estado</th><th>Detalle</th></tr></thead><tbody>`;
+    (!q || norm(r.ref).includes(q) || norm(r.color).includes(q)));
+  let html = `<thead><tr><th>Referencia</th><th>Color</th><th class="n">Sistema</th><th class="n">Físico</th><th class="n">Diferencia</th><th>Estado</th><th>Detalle</th></tr></thead><tbody>`;
   for (const r of rows) {
     const open = expanded.has(r.ref);
     html += `<tr class="ref" data-ref="${esc(r.ref)}"><td><span class="caret">${open ? '▾' : '▸'}</span><strong>${esc(r.ref)}</strong></td>
-      <td>${esc(r.desc)}</td><td class="n">${fmtN(r.sis)}</td><td class="n">${fmtN(r.fis)}</td>${difCell(r.dif)}
+      <td>${esc(r.color)}</td><td class="n">${fmtN(r.sis)}</td><td class="n">${fmtN(r.fis)}</td>${difCell(r.dif)}
       <td><span class="tag ${r.ok ? 't-ok' : 't-bad'}">${r.ok ? 'OK' : 'Con diferencias'}</span></td><td class="why">${esc(r.why)}</td></tr>`;
     if (open) for (const z of r.sizes) {
       html += `<tr class="sz"><td>Talla ${esc(z.talla || '(vacía)')}</td><td></td><td class="n">${fmtN(z.sis)}</td><td class="n">${fmtN(z.fis)}</td>${difCell(z.dif)}
@@ -719,13 +740,13 @@ $('#btnXlsx').addEventListener('click', () => {
   XLSX.utils.book_append_sheet(wb, sheetFrom(res, [18, 30, 11, 9, 12, 12, 11, 11, 10, 10, 22]), 'Resumen');
 
   for (const s of RESULT.stores.filter(x => x.status !== 'pend')) {
-    const byRef = [['Referencia', 'Descripción', 'Sistema', 'Físico', 'Diferencia', 'Estado', 'Detalle']];
-    s.refs.forEach(r => byRef.push([r.ref, r.desc, r.sis, r.fis, r.dif, r.ok ? 'OK' : 'Con diferencias', r.why]));
-    XLSX.utils.book_append_sheet(wb, sheetFrom(byRef, [16, 36, 10, 10, 11, 16, 50], 1), storeLabel(s));
+    const byRef = [['Referencia', 'Color', 'Sistema', 'Físico', 'Diferencia', 'Estado', 'Detalle']];
+    s.refs.forEach(r => byRef.push([r.ref, r.color, r.sis, r.fis, r.dif, r.ok ? 'OK' : 'Con diferencias', r.why]));
+    XLSX.utils.book_append_sheet(wb, sheetFrom(byRef, [18, 14, 10, 10, 11, 16, 50], 1), storeLabel(s));
 
-    const det = [['Referencia', 'Descripción', 'Talla', 'Sistema', 'Físico', 'Diferencia', 'Estado']];
-    s.refs.forEach(r => r.sizes.forEach(z => det.push([r.ref, r.desc, z.talla, z.sis, z.fis, z.dif, STATUS[z.st].t])));
-    XLSX.utils.book_append_sheet(wb, sheetFrom(det, [16, 36, 8, 10, 10, 11, 22], 1), `${storeLabel(s)} tallas`);
+    const det = [['Referencia', 'Color', 'Talla', 'Sistema', 'Físico', 'Diferencia', 'Estado']];
+    s.refs.forEach(r => r.sizes.forEach(z => det.push([r.ref, r.color, z.talla, z.sis, z.fis, z.dif, STATUS[z.st].t])));
+    XLSX.utils.book_append_sheet(wb, sheetFrom(det, [18, 14, 12, 10, 10, 11, 22], 1), `${storeLabel(s)} tallas`);
   }
   const d = RESULT.when;
   const stamp = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;

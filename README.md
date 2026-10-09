@@ -6,13 +6,14 @@ Todo se procesa en el navegador; los archivos no se suben a ningún servidor.
 
 ## Cómo se usa
 
-1. Carga el Excel de **traspasos del sistema** (uno solo, con las 4 tiendas).
-   - Detecta sola la fila de encabezados, las columnas de Referencia, Talla, Cantidad y la columna de **tienda destino**, y asigna cada valor de esa columna a su tienda (por código `A2`/`A3`/`A4`/`A7` o por nombre). Se puede ajustar en *Ajustar columnas*.
-   - *Filtrar por otra columna* sirve si el export trae traspasos que no se quieren verificar (ej. por documento o fecha).
+1. Carga el Excel de **traspasos del sistema** (uno solo, con las 4 tiendas). Siempre tiene este formato, con encabezados en la fila 1:
+   `Cód. Barras | Referencia | Talla | Color | Descripción | Cód. Almacén Origen | Cód. Almacén Destino | UDS. Env`
+   - Si alguna línea tiene un origen distinto a **C99** o un destino distinto a **A2, A3, A4, A7**, la página marca error con el número de fila y no deja verificar.
+   - Debajo del archivo se ven las unidades y referencias que van a cada tienda.
 2. Carga el Excel **físico** de cada tienda en su casilla. No hace falta tener las 4: las que falten salen como *Sin archivo de tienda*.
    - Acepta **una fila por talla** o **tallas en columnas** (`Referencia | 7 | 7.5 | 8 ...`).
 3. Clic en **Verificar traspasos**. Hay una pestaña de **Resumen** con todas las tiendas y una pestaña por tienda con el detalle.
-4. **Descargar reporte Excel**: hoja *Resumen* + por cada tienda una hoja por referencia y una hoja por talla. También se puede imprimir / guardar como PDF la pestaña abierta.
+4. **Descargar reporte Excel**: hoja *Resumen* + por cada tienda una hoja por referencia (Referencia, Color) y una hoja por talla (Referencia, Color, Talla). También se puede imprimir / guardar como PDF la pestaña abierta.
 
 El botón **Descargar plantilla para tiendas** da un Excel con las columnas `Referencia | Talla | Cantidad` para que las tiendas lo llenen siempre igual.
 
