@@ -44,6 +44,7 @@
   .seg button { border: 0; background: transparent; padding: 6px 10px; cursor: pointer; color: var(--text); font: inherit; }
   .seg button.on { background: var(--accent); color: #fff; }
   .hint { font-size: 12px; color: var(--muted); margin: 4px 0 0; }
+  .note { background: var(--warn-soft); color: var(--warn); border-radius: 8px; padding: 8px 12px; margin-bottom: 12px; font-size: 13px; }
   .err { color: var(--bad); font-size: 13px; margin-top: 6px; }
   .err ul { margin: 4px 0 0; padding-left: 18px; }
   .linkbtn { background: none; border: 0; color: var(--accent); cursor: pointer; font: inherit; font-size: 12px; padding: 0; }
@@ -66,11 +67,12 @@
   @media (max-width: 520px) { .storeunits { grid-template-columns: 1fr 1fr; } }
   .storeunits div { border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; font-size: 12px; color: var(--muted); }
   .storeunits b { display: block; font-size: 16px; color: var(--text); font-variant-numeric: tabular-nums; }
-  .tag { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 12px; font-weight: 600; }
+  .tag { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 12px; font-weight: 600; margin: 1px 2px 1px 0; }
   .t-ok { background: var(--ok-soft); color: var(--ok); }
-  .t-bad, .t-falt, .t-norec { background: var(--bad-soft); color: var(--bad); }
-  .t-sobr, .t-pend { background: var(--warn-soft); color: var(--warn); }
-  .t-noenv { background: var(--info-soft); color: var(--info); }
+  .t-bad { background: var(--bad-soft); color: var(--bad); }
+  .t-warn, .t-pend { background: var(--warn-soft); color: var(--warn); }
+  .t-info { background: var(--info-soft); color: var(--info); }
+  .t-none { background: var(--bg); color: var(--muted); }
   .dpos { color: var(--warn); font-weight: 600; } .dneg { color: var(--bad); font-weight: 600; }
   tr.ref, tr.store { cursor: pointer; }
   tr.ref:hover td, tr.store:hover td { background: var(--accent-soft); }
@@ -81,12 +83,13 @@
   .tabs button { border: 0; border-bottom: 3px solid transparent; background: none; padding: 8px 12px; cursor: pointer; color: var(--muted); font: inherit; font-weight: 600; display: inline-flex; align-items: center; gap: 6px; }
   .tabs button.on { color: var(--text); border-bottom-color: var(--accent); }
   .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
-  .dot.ok { background: var(--ok); } .dot.bad { background: var(--bad); } .dot.pend { background: var(--warn); }
+  .dot.ok { background: var(--ok); } .dot.bad { background: var(--bad); } .dot.pend { background: var(--warn); } .dot.none { background: var(--line); }
   .toolbar { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-bottom: 10px; }
   .toolbar input { width: 100%; max-width: 260px; padding: 7px 9px; border: 1px solid var(--line); border-radius: 6px;
     background: var(--card); color: var(--text); font: inherit; }
   .tablewrap { overflow: auto; max-height: 70vh; border: 1px solid var(--line); border-radius: 8px; }
   .why { white-space: normal; color: var(--muted); font-size: 12px; min-width: 220px; }
+  td.state { white-space: normal; min-width: 150px; }
   #results { display: none; }
   .print-head { display: none; }
   @media print {
@@ -102,21 +105,22 @@
 <body>
 <header>
   <h1>Verificador de Traspasos</h1>
-  <p>Cruza lo que cada tienda recibió físicamente contra los traspasos del sistema desde C99 Oficina, por referencia y talla. Los archivos se procesan solo en tu navegador; no se suben a ningún servidor.</p>
+  <p>Compara, por referencia y talla, el surtido sugerido contra el traspaso hecho en sistema desde C99 Oficina y contra lo que cada tienda recibió físicamente. Los archivos se procesan solo en tu navegador; no se suben a ningún servidor.</p>
 </header>
 
 <main>
 <section id="setup">
+  <div class="card" id="cardSur"></div>
   <div class="card" id="cardSis"></div>
 
-  <div class="section-title">2. Recibido en tiendas (físico)</div>
+  <div class="section-title">3. Recibido en tiendas (físico)</div>
   <div class="grid2" id="storeCards"></div>
 
   <div class="card">
-    <h2>3. Verificar</h2>
+    <h2>4. Verificar</h2>
     <div class="actions">
       <button class="btn" id="btnRun" disabled>Verificar traspasos</button>
-      <span class="hint" id="runHint">Carga el archivo del sistema y al menos una tienda.</span>
+      <span class="hint" id="runHint">Carga el surtido y el archivo del sistema.</span>
     </div>
   </div>
 </section>
@@ -151,6 +155,7 @@ const storeLabel = s => `${s.code} ${s.name}`;
 const $ = (s, r = document) => r.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const norm = s => String(s ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim();
+const cell = v => String(v ?? '').trim();
 
 function normRef(v) {
   return String(v ?? '').trim().toUpperCase().replace(/\s+/g, '');
@@ -193,9 +198,14 @@ function wireDrop(el, onFile) {
   drop.addEventListener('drop', ev => ev.dataTransfer.files[0] && onFile(ev.dataTransfer.files[0]));
   return { input, drop };
 }
+const unitsByStore = lines => `<div class="storeunits">${STORES.map(s => {
+  const ls = lines.filter(l => l.tienda === s.code);
+  return `<div>${esc(storeLabel(s))}<b>${ls.reduce((a, l) => a + l.cant, 0).toLocaleString()} unid.</b>${new Set(ls.map(l => l.ref)).size} referencias</div>`;
+}).join('')}</div>`;
 
-// ---------- fixed-format file loader (used for the system file and each store file) ----------
-// cols: expected header (row 1) for each column, in order. parseRow(r) returns { line, problems }.
+// ---------- fixed-format file loader (surtido, system file and each store file) ----------
+// cols: expected header (row 1) for each column, in order.
+// parseRow(r) returns { line } or { lines } plus { problems: [...] }.
 function makeFixedFile({ el, heading, subtitle, sheetRe, sheetLabel, cols, parseRow, renderExtra }) {
   const st = { fileName: '', lines: [], errors: [], loaded: false };
   el.innerHTML = `
@@ -245,7 +255,7 @@ function makeFixedFile({ el, heading, subtitle, sheetRe, sheetLabel, cols, parse
       if (r.slice(0, cols.length).every(v => cell(v) === '')) return;
       const res = parseRow(r);
       if (res.problems.length) errs.push(`Fila ${i + 2}: ${res.problems.join(', ')}`);
-      else st.lines.push(res.line);
+      else st.lines.push(...(res.lines || [res.line]));
     });
     if (errs.length) {
       st.errors = [`Hay ${errs.length} línea(s) con problemas. Corrige el archivo y vuelve a cargarlo:`, ...errs];
@@ -262,7 +272,7 @@ function makeFixedFile({ el, heading, subtitle, sheetRe, sheetLabel, cols, parse
     drop.classList.toggle('loaded', ok);
     drop.classList.toggle('failed', st.loaded && !ok);
     const units = st.lines.reduce((a, l) => a + l.cant, 0);
-    q('[data-sum]').textContent = ok ? `${st.lines.length.toLocaleString()} líneas · ${units.toLocaleString()} unidades · ${new Set(st.lines.map(l => l.ref)).size} referencias` : '';
+    q('[data-sum]').textContent = ok ? `${units.toLocaleString()} unidades · ${new Set(st.lines.map(l => l.ref)).size} referencias` : '';
     if (renderExtra) q('[data-extra]').innerHTML = ok ? renderExtra(st.lines) : '';
     const [head, ...rest] = st.errors;
     q('[data-err]').innerHTML = !head ? '' : esc(head) + (rest.length ?
@@ -277,13 +287,44 @@ function makeFixedFile({ el, heading, subtitle, sheetRe, sheetLabel, cols, parse
       st.errors.length ? { error: 'El archivo tiene errores', lines: [] } : { lines: st.lines },
   };
 }
-const cell = v => String(v ?? '').trim();
+
+// Surtido sugerido (worked in the office). First sheet, row 1 headers, row 2 is the TOTAL row:
+// A Referencia · B Talla · C C99 stock · D Albrook · E Dorado · F Metro Mall · G Multiplaza · H Total
+const SUR_STORE_COLS = [[3, 'A3'], [4, 'A4'], [5, 'A7'], [6, 'A2']];
+const SUR = makeFixedFile({
+  el: $('#cardSur'),
+  heading: '<h2>1. Surtido sugerido (oficina)</h2>',
+  subtitle: 'Formato del surtido: Referencia · Talla · C99 stock · Albrook · Dorado · Metro Mall · Multiplaza · Total',
+  cols: [
+    { re: /referencia/, label: 'Referencia' }, { re: /talla/, label: 'Talla' }, { re: /c99/, label: 'C99 stock' },
+    { re: /albrook/, label: 'Albrook' }, { re: /dorado/, label: 'Dorado' }, { re: /metro/, label: 'Metro Mall' },
+    { re: /multiplaza/, label: 'Multiplaza' }, { re: /total/, label: 'Total' },
+  ],
+  parseRow(r) {
+    const ref = normRef(r[0]), talla = normTalla(r[1]);
+    if (ref === 'TOTAL') return { lines: [], problems: [] };
+    const problems = [];
+    if (!ref) problems.push('sin referencia');
+    if (!talla) problems.push('sin talla');
+    const lines = [];
+    for (const [i, code] of SUR_STORE_COLS) {
+      const v = cell(r[i]);
+      if (!v) continue;
+      const n = toNum(r[i]);
+      if (typeof r[i] !== 'number' && isNaN(parseFloat(v))) problems.push(`cantidad "${v}" no es un número`);
+      else if (n < 0) problems.push(`cantidad negativa (${n})`);
+      else if (n) lines.push({ ref, talla, color: '', tienda: code, cant: n });
+    }
+    return { lines, problems };
+  },
+  renderExtra: unitsByStore,
+});
 
 // System file, exported by the office system. Row 1 headers:
 // A Cód. Barras · B Referencia · C Talla · D Color · E Descripción · F Cód. Almacén Origen · G Cód. Almacén Destino · H UDS. Env
 const SIS = makeFixedFile({
   el: $('#cardSis'),
-  heading: '<h2>1. Traspasos en sistema (C99 Oficina → tiendas)</h2>',
+  heading: '<h2>2. Traspasos en sistema (C99 Oficina → tiendas)</h2>',
   subtitle: 'Formato del sistema: Cód. Barras · Referencia · Talla · Color · Descripción · Almacén Origen · Almacén Destino · UDS. Env',
   cols: [
     { re: /barra/, label: 'Cód. Barras' }, { re: /referencia/, label: 'Referencia' }, { re: /talla/, label: 'Talla' },
@@ -301,10 +342,7 @@ const SIS = makeFixedFile({
     if (!line.cant) problems.push('sin cantidad');
     return { line, problems };
   },
-  renderExtra: lines => `<div class="storeunits">${STORES.map(s => {
-    const ls = lines.filter(l => l.tienda === s.code);
-    return `<div>${esc(storeLabel(s))}<b>${ls.reduce((a, l) => a + l.cant, 0).toLocaleString()} unid.</b>${new Set(ls.map(l => l.ref)).size} referencias</div>`;
-  }).join('')}</div>`,
+  renderExtra: unitsByStore,
 });
 
 // Store file: sheet "mapping", one row per scanned unit. Row 1 headers:
@@ -341,76 +379,41 @@ for (const s of STORES) {
 }
 
 function updateRun() {
-  const a = SIS.extract();
+  const a = SUR.extract(), b = SIS.extract();
   const loaded = STORES.filter(s => FIS[s.code].loaded());
   const bad = loaded.filter(s => FIS[s.code].extract().error);
   let msg = '';
-  if (a.error) msg = 'Sistema: ' + a.error;
-  else if (!loaded.length) msg = 'Carga el archivo de al menos una tienda.';
+  if (a.error) msg = 'Surtido: ' + a.error;
+  else if (b.error) msg = 'Sistema: ' + b.error;
   else if (bad.length) msg = bad.map(s => `${storeLabel(s)}: ${FIS[s.code].extract().error}`).join(' · ');
-  else if (loaded.length < STORES.length) msg = `Se verificarán ${loaded.length} de ${STORES.length} tiendas.`;
-  $('#btnRun').disabled = !!a.error || !loaded.length || !!bad.length;
+  else if (!loaded.length) msg = 'Sin archivos de tienda: se verificará solo surtido vs sistema.';
+  else if (loaded.length < STORES.length) msg = `Se verificará el físico de ${loaded.length} de ${STORES.length} tiendas.`;
+  $('#btnRun').disabled = !!a.error || !!b.error || !!bad.length;
   $('#runHint').textContent = msg;
 }
+updateRun();
 
 // ---------- comparison ----------
 let RESULT = null;
-const STATUS = {
-  ok: { t: 'OK', c: 't-ok' },
-  falt: { t: 'Faltante', c: 't-falt' },
-  sobr: { t: 'Sobrante', c: 't-sobr' },
-  noenv: { t: 'No estaba en traspaso', c: 't-noenv' },
-  norec: { t: 'No recibido', c: 't-norec' },
+// Per-size problems. "sis" = system vs surtido, "fis" = store vs system.
+const ISSUE = {
+  sisNone: { t: 'No pasado en sistema', c: 't-bad' },
+  sisExtra: { t: 'En sistema sin surtido', c: 't-info' },
+  sisLess: { t: 'Sistema con menos', c: 't-bad' },
+  sisMore: { t: 'Sistema con más', c: 't-warn' },
+  fisNone: { t: 'No recibido en tienda', c: 't-bad' },
+  fisExtra: { t: 'Recibido sin traspaso', c: 't-info' },
+  fisLess: { t: 'Faltante en tienda', c: 't-bad' },
+  fisMore: { t: 'Sobrante en tienda', c: 't-warn' },
 };
+const signed = n => (n > 0 ? '+' : '') + n;
 
-function compareStore(sis, fis) {
-  const refs = new Map();
-  const add = (l, side) => {
-    if (!refs.has(l.ref)) refs.set(l.ref, { ref: l.ref, color: '', sizes: new Map() });
-    const R = refs.get(l.ref);
-    if (!R.color && l.color) R.color = l.color;
-    if (!R.sizes.has(l.talla)) R.sizes.set(l.talla, { talla: l.talla, sis: 0, fis: 0 });
-    R.sizes.get(l.talla)[side] += l.cant;
-  };
-  sis.forEach(l => add(l, 'sis')); // system first, so its color wins
-  fis.forEach(l => add(l, 'fis'));
-
-  const out = [];
-  for (const R of refs.values()) {
-    const sizes = [...R.sizes.values()].sort((a, b) => sizeSort(a.talla, b.talla));
-    for (const s of sizes) {
-      s.dif = s.fis - s.sis;
-      s.st = s.dif === 0 ? 'ok' : s.sis === 0 ? 'noenv' : s.fis === 0 ? 'norec' : s.dif < 0 ? 'falt' : 'sobr';
-    }
-    const sisT = sizes.reduce((a, s) => a + s.sis, 0), fisT = sizes.reduce((a, s) => a + s.fis, 0);
-    const bad = sizes.filter(s => s.st !== 'ok');
-    let why = '';
-    if (bad.length) {
-      if (sisT === 0) why = 'Referencia no estaba en el traspaso';
-      else if (fisT === 0) why = 'Referencia no se recibió';
-      else why = bad.map(s => `Talla ${s.talla}: ${s.dif > 0 ? '+' : ''}${s.dif}`).join(', ');
-    }
-    out.push({ ref: R.ref, color: R.color, sizes, sis: sisT, fis: fisT, dif: fisT - sisT, ok: !bad.length, why });
-  }
-  out.sort((a, b) => (a.ok - b.ok) || a.ref.localeCompare(b.ref));
-  const all = out.flatMap(r => r.sizes);
-  return {
-    refs: out,
-    k: {
-      nRefs: out.length, okRefs: out.filter(r => r.ok).length, badRefs: out.filter(r => !r.ok).length,
-      sis: all.reduce((a, s) => a + s.sis, 0), fis: all.reduce((a, s) => a + s.fis, 0),
-      falt: all.reduce((a, s) => a + Math.max(0, -s.dif), 0),
-      sobr: all.reduce((a, s) => a + Math.max(0, s.dif), 0),
-    },
-  };
-}
-
-// The store scan may give a unisex size as a single number ("5") while the system uses "H5|M6.5".
-// If that exact size doesn't exist for the reference in the system but an H size with that number does, use it.
-function matchSizes(fisLines, sisLines) {
-  const exact = new Set(sisLines.map(l => l.ref + '#' + l.talla));
+// The store scan may give a unisex size as a single number ("5") while the office files use "H5|M6.5".
+// If that exact size doesn't exist for the reference but an H size with that number does, use it.
+function matchSizes(fisLines, officeLines) {
+  const exact = new Set(officeLines.map(l => l.ref + '#' + l.talla));
   const byH = new Map();
-  for (const l of sisLines) {
+  for (const l of officeLines) {
     const m = l.talla.match(/^H(\d+(?:\.\d+)?)\|M/);
     if (m) byH.set(l.ref + '#' + parseFloat(m[1]), l.talla);
   }
@@ -421,18 +424,73 @@ function matchSizes(fisLines, sisLines) {
   });
 }
 
+// hasFis: whether the store's physical file was loaded (otherwise only surtido vs sistema is checked)
+function compareStore(sur, sis, fis, hasFis) {
+  const refs = new Map();
+  const add = (l, side) => {
+    if (!refs.has(l.ref)) refs.set(l.ref, { ref: l.ref, color: '', sizes: new Map() });
+    const R = refs.get(l.ref);
+    if (!R.color && l.color) R.color = l.color;
+    if (!R.sizes.has(l.talla)) R.sizes.set(l.talla, { talla: l.talla, sur: 0, sis: 0, fis: 0 });
+    R.sizes.get(l.talla)[side] += l.cant;
+  };
+  sis.forEach(l => add(l, 'sis')); // system first, so its color wins
+  sur.forEach(l => add(l, 'sur'));
+  fis.forEach(l => add(l, 'fis'));
+
+  const out = [];
+  for (const R of refs.values()) {
+    const sizes = [...R.sizes.values()].sort((a, b) => sizeSort(a.talla, b.talla));
+    const notes = [];
+    for (const z of sizes) {
+      z.dSis = z.sis - z.sur;
+      z.dFis = hasFis ? z.fis - z.sis : null;
+      z.issues = [];
+      if (z.dSis) z.issues.push(z.sis === 0 ? 'sisNone' : z.sur === 0 ? 'sisExtra' : z.dSis < 0 ? 'sisLess' : 'sisMore');
+      if (z.dFis) z.issues.push(z.fis === 0 ? 'fisNone' : z.sis === 0 ? 'fisExtra' : z.dFis < 0 ? 'fisLess' : 'fisMore');
+      const parts = [];
+      if (z.dSis) parts.push(`sistema ${signed(z.dSis)}`);
+      if (z.dFis) parts.push(`tienda ${signed(z.dFis)}`);
+      if (parts.length) notes.push(`Talla ${z.talla}: ${parts.join(', ')}`);
+    }
+    const sum = f => sizes.reduce((a, z) => a + z[f], 0);
+    const r = { ref: R.ref, color: R.color, sizes, sur: sum('sur'), sis: sum('sis'), fis: sum('fis') };
+    r.dSis = r.sis - r.sur;
+    r.dFis = hasFis ? r.fis - r.sis : null;
+    r.sisOk = sizes.every(z => !z.dSis);
+    r.fisOk = !hasFis || sizes.every(z => !z.dFis);
+    r.ok = r.sisOk && r.fisOk;
+    r.why = notes.join('; ');
+    out.push(r);
+  }
+  out.sort((a, b) => (a.ok - b.ok) || a.ref.localeCompare(b.ref));
+  const all = out.flatMap(r => r.sizes);
+  const total = f => all.reduce((a, z) => a + z[f], 0);
+  return {
+    refs: out,
+    k: {
+      nRefs: out.length, okRefs: out.filter(r => r.ok).length, badRefs: out.filter(r => !r.ok).length,
+      sur: total('sur'), sis: total('sis'), fis: hasFis ? total('fis') : null,
+      sisBad: out.filter(r => !r.sisOk).length, fisBad: out.filter(r => !r.fisOk).length,
+    },
+  };
+}
+
 function compare() {
-  const sisLines = SIS.extract().lines;
+  const surLines = SUR.extract().lines, sisLines = SIS.extract().lines;
   const stores = STORES.map(s => {
+    const sur = surLines.filter(l => l.tienda === s.code);
     const sis = sisLines.filter(l => l.tienda === s.code);
     const side = FIS[s.code];
-    if (!side.loaded()) {
-      return { ...s, status: 'pend', file: '', sisUnits: sis.reduce((a, l) => a + l.cant, 0), sisRefs: new Set(sis.map(l => l.ref)).size };
-    }
-    const r = compareStore(sis, matchSizes(side.extract().lines, sisLines));
-    return { ...s, ...r, file: side.st.fileName, status: r.k.badRefs ? 'bad' : 'ok' };
+    const hasFis = side.loaded();
+    const fis = hasFis ? matchSizes(side.extract().lines, [...sisLines, ...surLines]) : [];
+    const r = compareStore(sur, sis, fis, hasFis);
+    const sisSt = !r.k.nRefs ? 'none' : r.k.sisBad ? 'bad' : 'ok';
+    const fisSt = !r.k.nRefs ? 'none' : !hasFis ? 'pend' : r.k.fisBad ? 'bad' : 'ok';
+    const status = !r.k.nRefs ? 'none' : (sisSt === 'bad' || fisSt === 'bad') ? 'bad' : fisSt === 'pend' ? 'pend' : 'ok';
+    return { ...s, ...r, hasFis, file: hasFis ? side.st.fileName : '', sisSt, fisSt, status };
   });
-  RESULT = { stores, fileSis: SIS.st.fileName, when: new Date() };
+  RESULT = { stores, fileSur: SUR.st.fileName, fileSis: SIS.st.fileName, when: new Date() };
   $('#results').style.display = 'block';
   showTab('resumen');
   $('#results').scrollIntoView({ behavior: 'smooth' });
@@ -440,11 +498,15 @@ function compare() {
 
 // ---------- results UI ----------
 let curTab = 'resumen', filter = 'all', expanded = new Set();
-const fmtN = n => n.toLocaleString('es-PA');
-const difCell = d => `<td class="n ${d < 0 ? 'dneg' : d > 0 ? 'dpos' : ''}">${d > 0 ? '+' : ''}${fmtN(d)}</td>`;
-const STORE_ST = { ok: ['OK', 't-ok'], bad: ['Con diferencias', 't-bad'], pend: ['Sin archivo de tienda', 't-pend'] };
+const fmtN = n => n == null ? '—' : n.toLocaleString('es-PA');
+const difCell = d => d == null ? '<td class="n hint">—</td>' : `<td class="n ${d < 0 ? 'dneg' : d > 0 ? 'dpos' : ''}">${signed(d)}</td>`;
+const CHECK_ST = { ok: ['OK', 't-ok'], bad: ['Con diferencias', 't-bad'], pend: ['Sin archivo de tienda', 't-pend'], none: ['Sin traspaso', 't-none'] };
+const checkTag = st => `<span class="tag ${CHECK_ST[st][1]}">${CHECK_ST[st][0]}</span>`;
+const issueTags = issues => issues.length ? issues.map(i => `<span class="tag ${ISSUE[i].c}">${ISSUE[i].t}</span>`).join('') : '<span class="tag t-ok">OK</span>';
+const issueText = issues => issues.length ? issues.map(i => ISSUE[i].t).join(', ') : 'OK';
 const kpiHtml = list => `<div class="kpis">${list.map(([l, v, c]) =>
   `<div class="kpi ${c}"><div class="v">${typeof v === 'number' ? fmtN(v) : v}</div><div class="l">${l}</div></div>`).join('')}</div>`;
+const headInfo = () => `Surtido: ${esc(RESULT.fileSur)} · Sistema: ${esc(RESULT.fileSis)} · ${esc(RESULT.when.toLocaleString('es-PA'))}`;
 
 function renderTabs() {
   $('#tabs').innerHTML = `<button data-tab="resumen" class="${curTab === 'resumen' ? 'on' : ''}">Resumen</button>` +
@@ -453,38 +515,35 @@ function renderTabs() {
 function showTab(tab) {
   curTab = tab; expanded = new Set();
   const s = RESULT.stores.find(x => x.code === tab);
-  filter = s && s.status === 'bad' ? 'bad' : 'all';
+  filter = s && s.k.badRefs ? 'bad' : 'all';
   renderTabs();
   tab === 'resumen' ? renderSummary() : renderStore(s);
 }
 $('#tabs').addEventListener('click', e => { const b = e.target.closest('button'); if (b) showTab(b.dataset.tab); });
 
 function renderSummary() {
-  const done = RESULT.stores.filter(s => s.status !== 'pend');
-  const sum = f => done.reduce((a, s) => a + s.k[f], 0);
-  $('#printHead').innerHTML = `<h2 style="margin:0">Verificación de traspasos C99 → tiendas</h2>
-    <div>Sistema: ${esc(RESULT.fileSis)} · ${esc(RESULT.when.toLocaleString('es-PA'))}</div>`;
+  const active = RESULT.stores.filter(s => s.status !== 'none');
+  const withFis = active.filter(s => s.hasFis);
+  const sum = (list, f) => list.reduce((a, s) => a + s.k[f], 0);
+  $('#printHead').innerHTML = `<h2 style="margin:0">Verificación de traspasos C99 → tiendas</h2><div>${headInfo()}</div>`;
+  const sisOk = active.filter(s => s.sisSt === 'ok').length, fisOk = withFis.filter(s => s.fisSt === 'ok').length;
   let html = kpiHtml([
-    ['Tiendas verificadas', `${done.length} / ${RESULT.stores.length}`, ''],
-    ['Tiendas OK', done.filter(s => s.status === 'ok').length, 'ok'],
-    ['Tiendas con diferencias', done.filter(s => s.status === 'bad').length, done.some(s => s.status === 'bad') ? 'bad' : 'ok'],
-    ['Unidades sistema', sum('sis'), ''], ['Unidades físico', sum('fis'), ''],
-    ['Faltantes / Sobrantes', `${fmtN(sum('falt'))} / ${fmtN(sum('sobr'))}`, sum('falt') || sum('sobr') ? 'bad' : 'ok'],
+    ['Unidades surtido', sum(active, 'sur'), ''],
+    ['Unidades sistema', sum(active, 'sis'), ''],
+    ['Unidades físico', withFis.length ? sum(withFis, 'fis') : '—', ''],
+    ['Surtido → Sistema OK', `${sisOk} / ${active.length}`, sisOk === active.length ? 'ok' : 'bad'],
+    ['Sistema → Tienda OK', `${fisOk} / ${withFis.length}`, !withFis.length ? '' : fisOk === withFis.length ? 'ok' : 'bad'],
+    ['Referencias con diferencias', sum(active, 'badRefs'), sum(active, 'badRefs') ? 'bad' : 'ok'],
   ]);
-  html += `<div class="tablewrap"><table><thead><tr><th>Tienda</th><th>Archivo</th><th class="n">Referencias</th><th class="n">Ref. OK</th><th class="n">Ref. con dif.</th>
-    <th class="n">Sistema</th><th class="n">Físico</th><th class="n">Diferencia</th><th class="n">Faltantes</th><th class="n">Sobrantes</th><th>Estado</th></tr></thead><tbody>`;
+  html += `<div class="tablewrap"><table><thead><tr><th>Tienda</th><th>Archivo tienda</th>
+    <th class="n">Surtido</th><th class="n">Sistema</th><th class="n">Físico</th><th class="n">Sistema − Surtido</th><th class="n">Físico − Sistema</th>
+    <th class="n">Ref. con dif.</th><th>Surtido → Sistema</th><th>Sistema → Tienda</th></tr></thead><tbody>`;
   for (const s of RESULT.stores) {
-    const [t, c] = STORE_ST[s.status];
-    if (s.status === 'pend') {
-      html += `<tr><td><strong>${esc(storeLabel(s))}</strong></td><td class="hint">—</td><td class="n">${fmtN(s.sisRefs)}</td><td class="n">—</td><td class="n">—</td>
-        <td class="n">${fmtN(s.sisUnits)}</td><td class="n">—</td><td class="n">—</td><td class="n">—</td><td class="n">—</td><td><span class="tag ${c}">${t}</span></td></tr>`;
-    } else {
-      const k = s.k;
-      html += `<tr class="store" data-code="${s.code}"><td><strong>${esc(storeLabel(s))}</strong></td><td class="hint">${esc(s.file)}</td>
-        <td class="n">${fmtN(k.nRefs)}</td><td class="n">${fmtN(k.okRefs)}</td><td class="n">${fmtN(k.badRefs)}</td>
-        <td class="n">${fmtN(k.sis)}</td><td class="n">${fmtN(k.fis)}</td>${difCell(k.fis - k.sis)}
-        <td class="n">${fmtN(k.falt)}</td><td class="n">${fmtN(k.sobr)}</td><td><span class="tag ${c}">${t}</span></td></tr>`;
-    }
+    const k = s.k;
+    html += `<tr class="${s.status === 'none' ? '' : 'store'}" data-code="${s.code}"><td><strong>${esc(storeLabel(s))}</strong></td><td class="hint">${esc(s.file || '—')}</td>
+      <td class="n">${fmtN(k.sur)}</td><td class="n">${fmtN(k.sis)}</td><td class="n">${fmtN(k.fis)}</td>
+      ${difCell(k.sis - k.sur)}${difCell(k.fis == null ? null : k.fis - k.sis)}
+      <td class="n">${fmtN(k.badRefs)}</td><td>${checkTag(s.sisSt)}</td><td>${checkTag(s.fisSt)}</td></tr>`;
   }
   html += '</tbody></table></div><p class="hint">Haz clic en una tienda para ver su detalle.</p>';
   $('#view').innerHTML = html;
@@ -493,17 +552,18 @@ function renderSummary() {
 
 function renderStore(s) {
   $('#printHead').innerHTML = `<h2 style="margin:0">Verificación de traspaso — ${esc(storeLabel(s))}</h2>
-    <div>Sistema: ${esc(RESULT.fileSis)} · Tienda: ${esc(s.file || '—')} · ${esc(RESULT.when.toLocaleString('es-PA'))}</div>`;
-  if (s.status === 'pend') {
-    $('#view').innerHTML = `<p>No se cargó el archivo de <strong>${esc(storeLabel(s))}</strong>. En el sistema hay ${fmtN(s.sisUnits)} unidades en ${fmtN(s.sisRefs)} referencias para esta tienda.</p>`;
+    <div>${headInfo()} · Tienda: ${esc(s.file || 'sin archivo')}</div>`;
+  if (s.status === 'none') {
+    $('#view').innerHTML = `<p>No hay surtido, traspaso ni recibo para <strong>${esc(storeLabel(s))}</strong>.</p>`;
     return;
   }
   const k = s.k;
-  $('#view').innerHTML = kpiHtml([
-    ['Referencias', k.nRefs, ''], ['Referencias OK', k.okRefs, 'ok'], ['Con diferencias', k.badRefs, k.badRefs ? 'bad' : 'ok'],
-    ['Unidades sistema', k.sis, ''], ['Unidades físico', k.fis, ''],
-    ['Faltantes / Sobrantes', `${fmtN(k.falt)} / ${fmtN(k.sobr)}`, k.falt || k.sobr ? 'bad' : 'ok'],
-  ]) + `
+  $('#view').innerHTML = (s.hasFis ? '' : `<div class="note">No se cargó el archivo de recibo de ${esc(storeLabel(s))}: solo se comparó el surtido contra el sistema.</div>`) +
+    kpiHtml([
+      ['Referencias', k.nRefs, ''], ['Referencias OK', k.okRefs, 'ok'], ['Con diferencias', k.badRefs, k.badRefs ? 'bad' : 'ok'],
+      ['Unidades surtido', k.sur, ''], ['Unidades sistema', k.sis, k.sis === k.sur ? '' : 'bad'],
+      ['Unidades físico', k.fis == null ? '—' : k.fis, k.fis == null || k.fis === k.sis ? '' : 'bad'],
+    ]) + `
     <div class="toolbar">
       <div class="seg" id="segFilter">
         <button data-f="all">Todas</button><button data-f="bad">Con diferencias</button><button data-f="ok">OK</button>
@@ -512,7 +572,7 @@ function renderStore(s) {
       <button class="btn ghost" id="btnExpand" style="padding:6px 10px">Expandir todo</button>
     </div>
     <div class="tablewrap"><table id="tbl"></table></div>
-    <p class="hint">Haz clic en una referencia para ver el detalle por talla. Diferencia = Físico − Sistema (negativo = faltó, positivo = llegó de más).</p>`;
+    <p class="hint">Haz clic en una referencia para ver el detalle por talla. Sistema − Surtido: lo que el sistema tiene de más (+) o de menos (−) contra el surtido. Físico − Sistema: lo que la tienda recibió de más (+) o de menos (−) contra el sistema.</p>`;
   const segSync = () => document.querySelectorAll('#segFilter button').forEach(b => b.classList.toggle('on', b.dataset.f === filter));
   segSync();
   $('#segFilter').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; filter = b.dataset.f; segSync(); renderTable(s); });
@@ -537,18 +597,20 @@ function renderTable(s) {
   const rows = s.refs.filter(r =>
     (filter === 'all' || (filter === 'ok') === r.ok) &&
     (!q || norm(r.ref).includes(q) || norm(r.color).includes(q)));
-  let html = `<thead><tr><th>Referencia</th><th>Color</th><th class="n">Sistema</th><th class="n">Físico</th><th class="n">Diferencia</th><th>Estado</th><th>Detalle</th></tr></thead><tbody>`;
+  let html = `<thead><tr><th>Referencia</th><th>Color</th><th class="n">Surtido</th><th class="n">Sistema</th><th class="n">Físico</th>
+    <th class="n">Sistema − Surtido</th><th class="n">Físico − Sistema</th><th>Estado</th><th>Detalle</th></tr></thead><tbody>`;
   for (const r of rows) {
     const open = expanded.has(r.ref);
     html += `<tr class="ref" data-ref="${esc(r.ref)}"><td><span class="caret">${open ? '▾' : '▸'}</span><strong>${esc(r.ref)}</strong></td>
-      <td>${esc(r.color)}</td><td class="n">${fmtN(r.sis)}</td><td class="n">${fmtN(r.fis)}</td>${difCell(r.dif)}
+      <td>${esc(r.color)}</td><td class="n">${fmtN(r.sur)}</td><td class="n">${fmtN(r.sis)}</td><td class="n">${s.hasFis ? fmtN(r.fis) : '—'}</td>
+      ${difCell(r.dSis)}${difCell(r.dFis)}
       <td><span class="tag ${r.ok ? 't-ok' : 't-bad'}">${r.ok ? 'OK' : 'Con diferencias'}</span></td><td class="why">${esc(r.why)}</td></tr>`;
     if (open) for (const z of r.sizes) {
-      html += `<tr class="sz"><td>Talla ${esc(z.talla || '(vacía)')}</td><td></td><td class="n">${fmtN(z.sis)}</td><td class="n">${fmtN(z.fis)}</td>${difCell(z.dif)}
-        <td><span class="tag ${STATUS[z.st].c}">${STATUS[z.st].t}</span></td><td></td></tr>`;
+      html += `<tr class="sz"><td>Talla ${esc(z.talla || '(vacía)')}</td><td></td><td class="n">${fmtN(z.sur)}</td><td class="n">${fmtN(z.sis)}</td>
+        <td class="n">${s.hasFis ? fmtN(z.fis) : '—'}</td>${difCell(z.dSis)}${difCell(z.dFis)}<td class="state" colspan="2">${issueTags(z.issues)}</td></tr>`;
     }
   }
-  if (!rows.length) html += `<tr><td colspan="7" class="hint" style="padding:16px">No hay referencias con este filtro.</td></tr>`;
+  if (!rows.length) html += `<tr><td colspan="9" class="hint" style="padding:16px">No hay referencias con este filtro.</td></tr>`;
   $('#tbl').innerHTML = html + '</tbody>';
 }
 
@@ -571,31 +633,31 @@ function sheetFrom(aoa, widths, autofilter) {
 }
 $('#btnXlsx').addEventListener('click', () => {
   const wb = XLSX.utils.book_new();
+  const blank = v => v == null ? '' : v;
   const res = [
     ['Verificación de traspasos C99 Oficina → tiendas'],
-    ['Archivo sistema', RESULT.fileSis], ['Generado', RESULT.when.toLocaleString('es-PA')], [],
-    ['Tienda', 'Archivo tienda', 'Referencias', 'Ref. OK', 'Ref. con diferencias', 'Unid. sistema', 'Unid. físico', 'Diferencia', 'Faltantes', 'Sobrantes', 'Estado'],
+    ['Surtido', RESULT.fileSur], ['Sistema', RESULT.fileSis], ['Generado', RESULT.when.toLocaleString('es-PA')], [],
+    ['Tienda', 'Archivo tienda', 'Unid. surtido', 'Unid. sistema', 'Unid. físico', 'Sistema − Surtido', 'Físico − Sistema', 'Ref. con diferencias', 'Surtido → Sistema', 'Sistema → Tienda'],
   ];
   for (const s of RESULT.stores) {
-    if (s.status === 'pend') res.push([storeLabel(s), '', s.sisRefs, '', '', s.sisUnits, '', '', '', '', STORE_ST.pend[0]]);
-    else { const k = s.k; res.push([storeLabel(s), s.file, k.nRefs, k.okRefs, k.badRefs, k.sis, k.fis, k.fis - k.sis, k.falt, k.sobr, STORE_ST[s.status][0]]); }
+    const k = s.k;
+    res.push([storeLabel(s), s.file, k.sur, k.sis, blank(k.fis), k.sis - k.sur, k.fis == null ? '' : k.fis - k.sis, k.badRefs, CHECK_ST[s.sisSt][0], CHECK_ST[s.fisSt][0]]);
   }
-  XLSX.utils.book_append_sheet(wb, sheetFrom(res, [18, 30, 11, 9, 12, 12, 11, 11, 10, 10, 22]), 'Resumen');
+  XLSX.utils.book_append_sheet(wb, sheetFrom(res, [18, 30, 12, 12, 12, 16, 15, 18, 18, 20]), 'Resumen');
 
-  for (const s of RESULT.stores.filter(x => x.status !== 'pend')) {
-    const byRef = [['Referencia', 'Color', 'Sistema', 'Físico', 'Diferencia', 'Estado', 'Detalle']];
-    s.refs.forEach(r => byRef.push([r.ref, r.color, r.sis, r.fis, r.dif, r.ok ? 'OK' : 'Con diferencias', r.why]));
-    XLSX.utils.book_append_sheet(wb, sheetFrom(byRef, [18, 14, 10, 10, 11, 16, 50], 1), storeLabel(s));
+  for (const s of RESULT.stores.filter(x => x.status !== 'none')) {
+    const byRef = [['Referencia', 'Color', 'Surtido', 'Sistema', 'Físico', 'Sistema − Surtido', 'Físico − Sistema', 'Estado', 'Detalle']];
+    s.refs.forEach(r => byRef.push([r.ref, r.color, r.sur, r.sis, s.hasFis ? r.fis : '', r.dSis, blank(r.dFis), r.ok ? 'OK' : 'Con diferencias', r.why]));
+    XLSX.utils.book_append_sheet(wb, sheetFrom(byRef, [18, 14, 9, 9, 9, 16, 15, 16, 60], 1), storeLabel(s));
 
-    const det = [['Referencia', 'Color', 'Talla', 'Sistema', 'Físico', 'Diferencia', 'Estado']];
-    s.refs.forEach(r => r.sizes.forEach(z => det.push([r.ref, r.color, z.talla, z.sis, z.fis, z.dif, STATUS[z.st].t])));
-    XLSX.utils.book_append_sheet(wb, sheetFrom(det, [18, 14, 12, 10, 10, 11, 22], 1), `${storeLabel(s)} tallas`);
+    const det = [['Referencia', 'Color', 'Talla', 'Surtido', 'Sistema', 'Físico', 'Sistema − Surtido', 'Físico − Sistema', 'Estado']];
+    s.refs.forEach(r => r.sizes.forEach(z => det.push([r.ref, r.color, z.talla, z.sur, z.sis, s.hasFis ? z.fis : '', z.dSis, blank(z.dFis), issueText(z.issues)])));
+    XLSX.utils.book_append_sheet(wb, sheetFrom(det, [18, 14, 12, 9, 9, 9, 16, 15, 40], 1), `${storeLabel(s)} tallas`);
   }
   const d = RESULT.when;
   const stamp = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
   XLSX.writeFile(wb, `Verificacion traspasos ${stamp}.xlsx`);
 });
-
 </script>
 </body>
 </html>
